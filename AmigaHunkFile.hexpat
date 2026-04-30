@@ -80,6 +80,8 @@ const s64 MAX_COUNT_UNLIMITED = -1;
 const str COLOR_HUNK = "4F7FAF";
 const str COLOR_TYPE = "AF7F4F";
 
+const str FORMAT_DEC_HEX = "{0} [0x{0:X}]";
+
 const str NAME_RESIDENT = "Resident";
 const str NAME_MAIN_HUNK_DATA = "Main Hunk Data";
 const str NAME_OFFSET_DATA = "Offset Data";
@@ -92,7 +94,8 @@ HunkType root_hunk_type = 0;
 HunkType current_hunk_type = 0;
 
 // padding is a reserved name
-using pad<T> = T [[name("padding")]];
+using pad<T> = T [[name("padding"), format("format_dec_hex")]];
+using formatted<T> = T [[format("format_dec_hex")]];;
 
 // *** forward declarations ***
 // * logical groups *
@@ -166,6 +169,10 @@ fn read_unsigned32() {
 
 fn read_unsigned16() {
     return std::mem::read_unsigned($, 2, std::mem::Endian::Big);
+};
+
+fn format_dec_hex(auto value) {
+    return std::format("{0} [0x{0:X}]", value);
 };
 
 fn get_indexed_name(str name) {
@@ -268,23 +275,23 @@ struct HunkTemplate_Type {
 struct HunkTemplate_TypeWithFlags {
     HunkTypeValue hunk_type [[color(COLOR_TYPE)]];
     if (is_other_memory(hunk_type.memory_type))
-        u32 memory_type;
+        formatted<u32> memory_type;
 } [[name(get_hunk_name(hunk_type.type))]];
 
 struct HunkTemplate_Name: HunkTemplate_Type {
-    u32 name_length;
+    formatted<u32> name_length;
     if (name_length > 0)
         char hunk_name[name_length * 4];
 };
 
 struct HunkTemplate_RelocLong: HunkTemplate_Type {
     OffsetLong offset[while(read_unsigned32() != 0)] [[inline]];
-    u32 offset_end;
+    formatted<u32> offset_end;
 };
 
 struct HunkTemplate_RelocWord: HunkTemplate_Type {
     OffsetWord offset[while(read_unsigned16() != 0)] [[inline]];
-    u16 offset_end;
+    formatted<u16> offset_end;
     if ($ % 4 != 0)
         pad<u16> _padding;
 };
@@ -292,7 +299,7 @@ struct HunkTemplate_RelocWord: HunkTemplate_Type {
 struct HunkTemplate_Symbol: HunkTemplate_Type {
     Symbol symbol[while(read_unsigned32() != 0)] [[inline]];
     cleanup_indexed_name(symbol);
-    u32 symbol_end;
+    formatted<u32> symbol_end;
 };
 
 // *** root hunks ***
@@ -302,10 +309,10 @@ struct HunkHeader: HunkTemplate_Type {
     Resident resident[while(read_unsigned32() != 0)] [[name(get_count_name(NAME_RESIDENT, this)), inline]];
     u32 resident_count = std::core::member_count(resident);
     cleanup_indexed_name(resident);
-    u32 resident_end;
-    u32 segment_count;
-    u32 first_segment;
-    u32 last_segment;
+    formatted<u32> resident_end;
+    formatted<u32> segment_count;
+    formatted<u32> first_segment;
+    formatted<u32> last_segment;
     u32 root_segment_count = last_segment - first_segment + 1;
     if (root_segment_count > 0) {
         MainHunkData main_hunk_data[root_segment_count] [[name(get_count_name(NAME_MAIN_HUNK_DATA, this))]];
@@ -317,11 +324,11 @@ struct HunkOverlay: HunkTemplate_Type {
     if (!assert_hunk_type(hunk_type, HunkType::HUNK_OVERLAY))
         return;
     u32 remaining_segment_count = get_remaining_segment_count(parent.hunk_header.segment_count, parent.hunk_header.root_segment_count, parent.hunk_header.resident_count);
-    u32 overlay_table_size;
+    formatted<u32> overlay_table_size;
     if (overlay_table_size > 0) {
         if (remaining_segment_count > 0)
-            u32 number_levels;
-        u32 overlay_table[overlay_table_size];
+            formatted<u32> number_levels;
+        formatted<u32> overlay_table[overlay_table_size];
     }
     if (remaining_segment_count > 0) {
         Node node[while(!std::mem::eof())] [[inline]];
@@ -331,9 +338,9 @@ struct HunkOverlay: HunkTemplate_Type {
         if (std::core::is_valid_enum(probable_hunk_type)) {
             ReadHunks read_hunks;
         }
-        u32 data_size = std::mem::size() - $;
+        formatted<u32> data_size = std::mem::size() - $;
         if (data_size > 0)
-            u8 data[data_size];
+            formatted<u8> data[data_size];
     }
 };
 
@@ -345,14 +352,14 @@ struct HunkUnit: HunkTemplate_Name {
 struct HunkLib: HunkTemplate_Type {
     if (!assert_hunk_type(hunk_type, HunkType::HUNK_LIB))
         return;
-    u32 lib_size;
+    formatted<u32> lib_size;
 };
 
 struct HunkIndex: HunkTemplate_Type {
     if (!assert_hunk_type(hunk_type, HunkType::HUNK_INDEX))
         return;
-    u32 index_size;
-    u16 string_table_size;
+    formatted<u32> index_size;
+    formatted<u16> string_table_size;
     StringTable<string_table_size> string_table;
     s64 hunk_end_offset = addressof(this) + index_size * 4 + sizeof(hunk_type) + sizeof(index_size);
     UnitIndex unit_index[while(!std::mem::eof() && $ < hunk_end_offset && read_unsigned16() != 0)] [[inline]];
@@ -369,22 +376,22 @@ struct HunkBreak: HunkTemplate_Type {
 };
 
 struct HunkCode: HunkTemplate_TypeWithFlags {
-    u32 code_size;
+    formatted<u32> code_size;
     if (code_size > 0)
-        u8 code[code_size * 4];
+        formatted<u8> code[code_size * 4];
 };
 
 struct HunkPPCCode: HunkCode {
 };
 
 struct HunkData: HunkTemplate_TypeWithFlags {
-    u32 data_size;
+    formatted<u32> data_size;
     if (data_size > 0)
-        u8 data[data_size * 4];
+        formatted<u8> data[data_size * 4];
 };
 
 struct HunkBSS: HunkTemplate_TypeWithFlags {
-    u32 bss_size;
+    formatted<u32> bss_size;
 };
 
 struct HunkReloc32: HunkTemplate_RelocLong {
@@ -430,9 +437,9 @@ struct HunkSymbol: HunkTemplate_Symbol {
 };
 
 struct HunkDebug: HunkTemplate_Type {
-    u32 debug_size;
+    formatted<u32> debug_size;
     if (debug_size > 0)
-        u8 data[debug_size * 4];
+        formatted<u8> data[debug_size * 4];
 };
 
 struct HunkEnd: HunkTemplate_Type {
@@ -444,21 +451,21 @@ struct HunkResLib: HunkTemplate_Type {
 struct MainHunkData {
     MainHunkDataValue data;
     if (is_other_memory(data.memory_type))
-        u32 memory_type;
+        formatted<u32> memory_type;
 } [[name(get_indexed_name(NAME_MAIN_HUNK_DATA))]];
 
 struct Resident {
-    u32 resident_name_length;
+    formatted<u32> resident_name_length;
     if (resident_name_length > 0)
         char resident_name[resident_name_length * 4];
 } [[name(get_indexed_name(NAME_RESIDENT))]];
 
 struct Offset<T> {
-    T offset_count;
+    formatted<T> offset_count;
     if (offset_count == 0)
         break;
-    T hunk_number;
-    T offset[offset_count];
+    formatted<T> hunk_number;
+    formatted<T> offset[offset_count];
 } [[name(get_indexed_name(NAME_OFFSET_DATA))]];
 
 struct OffsetLong: Offset<u32> {
@@ -476,23 +483,23 @@ struct StringTable<auto size> {
 } [[name("String Table")]];
 
 struct UnitIndex {
-    u16 unit_name_offset;
-    u16 first_segment_offset;
-    u16 segment_count;
+    formatted<u16> unit_name_offset;
+    formatted<u16> first_segment_offset;
+    formatted<u16> segment_count;
     UnitSegmentIndex unit_segment_index[segment_count] [[name(get_count_name(NAME_UNIT_SEGMENT_INDEX, this))]];
     cleanup_indexed_name(unit_segment_index);
 } [[name(get_indexed_name("Unit Index"))]];
 
 struct UnitSegmentIndex {
-    u16 segment_name_offset;
-    u16 main_hunk_size;
+    formatted<u16> segment_name_offset;
+    formatted<u16> main_hunk_size;
     HunkTypeValueShort main_hunk_type_short;
-    u16 reference_count;
+    formatted<u16> reference_count;
     if (reference_count > 0) {
         Reference reference[reference_count] [[name(get_count_name(NAME_REFERENCE, this))]];
         cleanup_indexed_name(reference);
     }
-    u16 definition_count;
+    formatted<u16> definition_count;
     if (definition_count > 0) {
         Definition definition[definition_count] [[name(get_count_name(NAME_DEFINITION, this))]];
         cleanup_indexed_name(definition);
@@ -500,30 +507,30 @@ struct UnitSegmentIndex {
 } [[name(get_indexed_name(NAME_UNIT_SEGMENT_INDEX))]];
 
 struct Reference {
-    u16 reference_name_offset;
+    formatted<u16> reference_name_offset;
 } [[name(get_indexed_name(NAME_REFERENCE))]];
 
 struct Definition {
-    u16 definition_name_offset;
-    u16 symbol_value_short;
-    u8 bits_ext_abs;
+    formatted<u16> definition_name_offset;
+    formatted<u16> symbol_value_short;
+    formatted<u8> bits_ext_abs;
     SymbolTypeValueShort symbol_type_short;
 } [[name(get_indexed_name(NAME_DEFINITION))]];
 
 struct Symbol {
-    u8 symbol_type;
-    u24 symbol_length;
+    SymbolType symbol_type;
+    formatted<u24> symbol_length;
     if (symbol_length > 0) {
         char symbol_name[symbol_length * 4];
         if (symbol_type < 0x80) {
-            u32 symbol_value;
+            formatted<u32> symbol_value;
         } else {
             if (symbol_type == SymbolType::EXT_COMMON || symbol_type == SymbolType::EXT_RELCOMMON) {
-                u32 common_hunk_size;
+                formatted<u32> common_hunk_size;
             }
-            u32 reference_count;
+            formatted<u32> reference_count;
             if (reference_count > 0)
-                u32 reference_offset[reference_count];
+                formatted<u32> reference_offset[reference_count];
         }
     }
 } [[name(get_indexed_name("Symbol"))]];
@@ -547,7 +554,7 @@ struct ReadUnitGroup<auto hunk_index> {
 
 bitfield MainHunkDataValue {
     MemoryType memory_type : 2;
-    size                   : 30;
+    size                   : 30 [[format("format_dec_hex")]];
 };
 
 bitfield HunkTypeValue {
